@@ -1,0 +1,164 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: security-system-maintenance
+  labels:
+    app: security-system
+spec:
+  schedule: "0 3 * * *"  # Runs daily at 3 AM
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: security-system
+        spec:
+          containers:
+          - name: maintenance-task
+            image: your-docker-repo/security_system_automation:latest
+            command: ["/bin/bash", "-c", "python3 automate_maintenance.py && python3 incident_report.py"]
+            env:
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials-secret
+                  key: db_host
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials-secret
+                  key: db_port
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials-secret
+                  key: db_name
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials-secret
+                  key: db_user
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials-secret
+                  key: db_password
+            - name: PROMETHEUS_HOST
+              value: "localhost"
+            - name: PROMETHEUS_PORT
+              value: "9090"
+            - name: GRAFANA_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-credentials-secret
+                  key: grafana_token
+            - name: SMTP_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-credentials-secret
+                  key: smtp_server
+            - name: SMTP_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-credentials-secret
+                  key: smtp_port
+            - name: EMAIL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-credentials-secret
+                  key: email_user
+            - name: EMAIL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-credentials-secret
+                  key: email_password
+            - name: ALERT_EMAIL_RECIPIENT
+              value: "recipient@example.com"
+            resources:
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+              requests:
+                memory: "256Mi"
+                cpu: "250m"
+          restartPolicy: OnFailure
+      backoffLimit: 3
+      activeDeadlineSeconds: 1800  # Time out after 30 minutes if the job doesn't complete
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: incident-report-generator
+  labels:
+    app: security-system
+spec:
+  schedule: "*/30 * * * *"  # Runs every 30 minutes
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: security-system
+        spec:
+          containers:
+          - name: incident-report-task
+            image: your-docker-repo/security_system_automation:latest
+            command: ["/bin/bash", "-c", "python3 incident_report.py"]
+            env:
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials-secret
+                  key: db_host
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials-secret
+                  key: db_port
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials-secret
+                  key: db_name
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials-secret
+                  key: db_user
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials-secret
+                  key: db_password
+            - name: SMTP_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-credentials-secret
+                  key: smtp_server
+            - name: SMTP_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-credentials-secret
+                  key: smtp_port
+            - name: EMAIL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-credentials-secret
+                  key: email_user
+            - name: EMAIL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: smtp-credentials-secret
+                  key: email_password
+            - name: ALERT_EMAIL_RECIPIENT
+              value: "recipient@example.com"
+            resources:
+              limits:
+                memory: "256Mi"
+                cpu: "200m"
+              requests:
+                memory: "128Mi"
+                cpu: "100m"
+          restartPolicy: OnFailure
+      backoffLimit: 3
+      activeDeadlineSeconds: 1200  # Time out after 20 minutes if the job doesn't complete

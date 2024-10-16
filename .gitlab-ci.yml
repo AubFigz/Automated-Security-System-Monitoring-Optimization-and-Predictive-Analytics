@@ -1,0 +1,96 @@
+# .gitlab-ci.yml
+
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  DOCKER_DRIVER: overlay2
+  KUBECONFIG: /path/to/kubeconfig  # Ensure the proper path to your kubeconfig file for K8s deployment
+
+# Define global services and dependencies for all stages
+services:
+  - docker:dind
+
+# Build Stage: Set up Docker image with necessary dependencies
+build:
+  stage: build
+  image: docker:stable
+  before_script:
+    - docker info
+  script:
+    - docker build -t myproject/app:latest .
+  only:
+    - main
+  tags:
+    - docker
+
+# Test Stage: Run unit tests using Pytest
+test:
+  stage: test
+  image: python:3.9
+  before_script:
+    - pip install -r requirements.txt
+  script:
+    - pytest tests/ --junitxml=test-results.xml
+  artifacts:
+    reports:
+      junit: test-results.xml
+    paths:
+      - test-results.xml
+  tags:
+    - python
+  only:
+    - merge_requests
+    - main
+
+# Containerize Stage: Package the app and models into Docker containers
+containerize:
+  stage: build
+  image: docker:stable
+  before_script:
+    - docker info
+  script:
+    - docker build -t myproject/app:latest .
+    - docker build -t myproject/models:latest -f Dockerfile.models .
+  tags:
+    - docker
+  only:
+    - main
+  artifacts:
+    paths:
+      - ./build
+  when: on_success
+
+# Deploy Stage: Deploy the application, models, and monitoring tools to Kubernetes
+deploy:
+  stage: deploy
+  image: google/cloud-sdk:latest
+  script:
+    - echo "$KUBE_CONFIG" | base64 -d > /root/.kube/config  # Use base64-encoded kubeconfig stored in GitLab CI environment variable
+    - kubectl config use-context my-cluster
+    - kubectl apply -f k8s-deployment.yaml  # Deploy the app to Kubernetes
+    - kubectl apply -f cronjob.yaml         # Apply the CronJob
+    - python deployment_scripts/deploy_monitoring_system.py  # Deploy Grafana/Prometheus setups
+    - python deployment_scripts/deploy_models.py  # Deploy the trained models
+  only:
+    - main
+  environment:
+    name: production
+  tags:
+    - k8s
+  when: manual
+  dependencies:
+    - containerize
+
+# Notifications: Notify on failure/success of the deployment stage
+notify:
+  stage: deploy
+  image: python:3.9
+  script:
+    - pip install smtplib3
+    - python deployment_scripts/notify_on_failure.py  # Use a script to send email notification if failure
+  when: on_failure
+  only:
+    - main

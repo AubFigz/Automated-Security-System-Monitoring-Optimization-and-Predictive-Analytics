@@ -1,0 +1,244 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: security-system-deployment
+  labels:
+    app: security-system
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: security-system
+  template:
+    metadata:
+      labels:
+        app: security-system
+    spec:
+      containers:
+      - name: security-system-app
+        image: your-docker-repo/security_system_automation:latest
+        ports:
+        - containerPort: 8000  # Prometheus metrics
+        - containerPort: 8050  # Dash Plotly app
+        - containerPort: 3000  # Grafana
+        - containerPort: 9090  # Prometheus web
+        env:
+        - name: DB_HOST
+          value: "your-db-host"
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_NAME
+          value: "security_systems"
+        - name: DB_USER
+          value: "your_user"
+        - name: DB_PASSWORD
+          value: "your_password"
+        - name: PROMETHEUS_HOST
+          value: "localhost"
+        - name: PROMETHEUS_PORT
+          value: "9090"
+        - name: GRAFANA_API_TOKEN
+          value: "your_grafana_token"
+        - name: SMTP_SERVER
+          value: "smtp.example.com"
+        - name: SMTP_PORT
+          value: "587"
+        - name: EMAIL_USER
+          value: "your_email@example.com"
+        - name: EMAIL_PASSWORD
+          value: "your_email_password"
+        - name: ALERT_EMAIL_RECIPIENT
+          value: "recipient@example.com"
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+        volumeMounts:
+        - name: log-volume
+          mountPath: /var/log/security-system
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: log-volume
+        persistentVolumeClaim:
+          claimName: log-volume-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: security-system-service
+spec:
+  selector:
+    app: security-system
+  ports:
+  - protocol: TCP
+    port: 8000
+    targetPort: 8000
+  - protocol: TCP
+    port: 8050
+    targetPort: 8050
+  - protocol: TCP
+    port: 9090
+    targetPort: 9090
+  - protocol: TCP
+    port: 3000
+    targetPort: 3000
+  type: LoadBalancer
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: maintenance-scheduler
+spec:
+  schedule: "0 3 * * *"  # Schedule for 3 AM every day
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: maintenance-scheduler
+            image: your-docker-repo/security_system_automation:latest
+            command: ["/bin/bash", "-c", "python3 automate_maintenance.py"]
+          restartPolicy: OnFailure
+          readinessProbe:
+            exec:
+              command: ["/bin/bash", "-c", "python3 maintenance_health_check.py"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-config
+  labels:
+    app: grafana
+data:
+  grafana.ini: |
+    [auth]
+    disable_login_form = false
+    enable_github = false
+
+    [security]
+    admin_user = admin
+    admin_password = admin
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana-deployment
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:latest
+        ports:
+        - containerPort: 3000
+        volumeMounts:
+        - name: grafana-storage
+          mountPath: /var/lib/grafana
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: grafana-storage
+        persistentVolumeClaim:
+          claimName: grafana-storage-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-service
+spec:
+  selector:
+    app: grafana
+  ports:
+  - protocol: TCP
+    port: 3000
+    targetPort: 3000
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-deployment
+  labels:
+    app: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:latest
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+        - name: prometheus-storage
+          mountPath: /etc/prometheus
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: 9090
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /-/healthy
+            port: 9090
+          initialDelaySeconds: 30
+          periodSeconds: 10
+      volumes:
+      - name: prometheus-storage
+        persistentVolumeClaim:
+          claimName: prometheus-storage-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-service
+spec:
+  selector:
+    app: prometheus
+  ports:
+  - protocol: TCP
+    port: 9090
+    targetPort: 9090
+  type: LoadBalancer
